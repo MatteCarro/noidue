@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
+import { dbLoad, dbSave } from "./lib/supabase";
 import {
   Heart, CalendarDays, UtensilsCrossed, FolderHeart, Users,
   Plus, Trash2, ShoppingCart, Sparkles, Check, X, Bell,
@@ -13,15 +14,6 @@ import {
    Persistenza: localStorage tramite load/save.
    ============================================================ */
 
-function load(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw != null ? JSON.parse(raw) : fallback;
-  } catch { return fallback; }
-}
-function save(key, value) {
-  try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { console.error(e); }
-}
 const uid = () =>
   (typeof crypto !== "undefined" && crypto.randomUUID)
     ? crypto.randomUUID()
@@ -80,47 +72,52 @@ async function generaIngredienti(piatto, porzioni) {
 }
 
 /* ============================================================ */
+const DEFAULT_PROFILES = {
+  a: { nome: "Lui", emoji: "🧔", bio: "Videomaker e artista visivo, non bello quanto lei, ma talentuoso anche lui." },
+  b: { nome: "Lei", emoji: "👩", bio: "Musicista esperta, bella e talentuosa." },
+  since: "2026-01-10",
+};
+
 export default function NoiDue() {
   const [tab, setTab] = useState("home");
+  const [ready, setReady] = useState(false);
+  const initialized = useRef(false);
 
-  const [profiles, setProfiles] = useState(() => load("noidue:profiles", {
-    a: { nome: "Lui", emoji: "🧔", bio: "Videomaker e artista visivo, non bello quanto lei, ma talentuoso anche lui." },
-    b: { nome: "Lei", emoji: "👩", bio: "Musicista esperta, bella e talentuosa." },
-    since: "2026-01-10",
-  }));
-  const [posts, setPosts] = useState(() => load("noidue:posts", []));
-  const [calendario, setCalendario] = useState(() => load("noidue:calendario", []));
-  const [pasti, setPasti] = useState(() => load("noidue:pasti", []));
-  const [spesa, setSpesa] = useState(() => load("noidue:spesa", []));
-  const [progetti, setProgetti] = useState(() => load("noidue:progetti", []));
+  const [profiles, setProfiles] = useState(DEFAULT_PROFILES);
+  const [posts, setPosts] = useState([]);
+  const [calendario, setCalendario] = useState([]);
+  const [pasti, setPasti] = useState([]);
+  const [spesa, setSpesa] = useState([]);
+  const [progetti, setProgetti] = useState([]);
 
-  // Migrazione una tantum: aggiorna bio e data se ancora ai vecchi default
   useEffect(() => {
-    setProfiles((p) => {
-      let changed = false;
-      const next = { ...p };
-      if (p.a.bio === "Scrivi qui due righe su di te.") {
-        next.a = { ...p.a, bio: "Videomaker e artista visivo, non bello quanto lei, ma talentuoso anche lui." };
-        changed = true;
-      }
-      if (p.b.bio === "Scrivi qui due righe su di te.") {
-        next.b = { ...p.b, bio: "Musicista esperta, bella e talentuosa." };
-        changed = true;
-      }
-      if (p.since === "2024-01-01") {
-        next.since = "2026-01-10";
-        changed = true;
-      }
-      return changed ? next : p;
-    });
+    async function init() {
+      const [p, po, cal, pa, sp, pr] = await Promise.all([
+        dbLoad("noidue:profiles", DEFAULT_PROFILES),
+        dbLoad("noidue:posts", []),
+        dbLoad("noidue:calendario", []),
+        dbLoad("noidue:pasti", []),
+        dbLoad("noidue:spesa", []),
+        dbLoad("noidue:progetti", []),
+      ]);
+      setProfiles(p);
+      setPosts(po);
+      setCalendario(cal);
+      setPasti(pa);
+      setSpesa(sp);
+      setProgetti(pr);
+      initialized.current = true;
+      setReady(true);
+    }
+    init();
   }, []);
 
-  useEffect(() => { save("noidue:profiles", profiles); }, [profiles]);
-  useEffect(() => { save("noidue:posts", posts); }, [posts]);
-  useEffect(() => { save("noidue:calendario", calendario); }, [calendario]);
-  useEffect(() => { save("noidue:pasti", pasti); }, [pasti]);
-  useEffect(() => { save("noidue:spesa", spesa); }, [spesa]);
-  useEffect(() => { save("noidue:progetti", progetti); }, [progetti]);
+  useEffect(() => { if (initialized.current) dbSave("noidue:profiles", profiles); }, [profiles]);
+  useEffect(() => { if (initialized.current) dbSave("noidue:posts", posts); }, [posts]);
+  useEffect(() => { if (initialized.current) dbSave("noidue:calendario", calendario); }, [calendario]);
+  useEffect(() => { if (initialized.current) dbSave("noidue:pasti", pasti); }, [pasti]);
+  useEffect(() => { if (initialized.current) dbSave("noidue:spesa", spesa); }, [spesa]);
+  useEffect(() => { if (initialized.current) dbSave("noidue:progetti", progetti); }, [progetti]);
 
   const autori = [
     { key: "a", label: profiles.a.nome, tone: "peach" },
@@ -138,6 +135,19 @@ export default function NoiDue() {
     const d = Math.floor((Date.now() - new Date(profiles.since).getTime()) / 86400000);
     return d >= 0 ? d : null;
   }, [profiles.since]);
+
+  if (!ready) {
+    return (
+      <div className="nd-root relative min-h-screen flex items-center justify-center">
+        <NDStyles />
+        <Backdrop />
+        <div className="relative z-[1] flex flex-col items-center gap-3 text-[var(--ink3)]">
+          <Loader2 size={28} className="animate-spin text-[var(--peach)]" />
+          <span className="nd-hand text-[20px]">caricamento…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="nd-root relative min-h-screen">
