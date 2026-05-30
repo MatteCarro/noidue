@@ -84,15 +84,36 @@ export default function NoiDue() {
   const [tab, setTab] = useState("home");
 
   const [profiles, setProfiles] = useState(() => load("noidue:profiles", {
-    a: { nome: "Lui", emoji: "🧔", bio: "Scrivi qui due righe su di te." },
-    b: { nome: "Lei", emoji: "👩", bio: "Scrivi qui due righe su di te." },
-    since: "2024-01-01",
+    a: { nome: "Lui", emoji: "🧔", bio: "Videomaker e artista visivo, non bello quanto lei, ma talentuoso anche lui." },
+    b: { nome: "Lei", emoji: "👩", bio: "Musicista esperta, bella e talentuosa." },
+    since: "2026-01-10",
   }));
   const [posts, setPosts] = useState(() => load("noidue:posts", []));
   const [calendario, setCalendario] = useState(() => load("noidue:calendario", []));
   const [pasti, setPasti] = useState(() => load("noidue:pasti", []));
   const [spesa, setSpesa] = useState(() => load("noidue:spesa", []));
   const [progetti, setProgetti] = useState(() => load("noidue:progetti", []));
+
+  // Migrazione una tantum: aggiorna bio e data se ancora ai vecchi default
+  useEffect(() => {
+    setProfiles((p) => {
+      let changed = false;
+      const next = { ...p };
+      if (p.a.bio === "Scrivi qui due righe su di te.") {
+        next.a = { ...p.a, bio: "Videomaker e artista visivo, non bello quanto lei, ma talentuoso anche lui." };
+        changed = true;
+      }
+      if (p.b.bio === "Scrivi qui due righe su di te.") {
+        next.b = { ...p.b, bio: "Musicista esperta, bella e talentuosa." };
+        changed = true;
+      }
+      if (p.since === "2024-01-01") {
+        next.since = "2026-01-10";
+        changed = true;
+      }
+      return changed ? next : p;
+    });
+  }, []);
 
   useEffect(() => { save("noidue:profiles", profiles); }, [profiles]);
   useEffect(() => { save("noidue:posts", posts); }, [posts]);
@@ -210,10 +231,8 @@ function Hero({ profiles, giorni }) {
 
       {giorni != null && (
         <div className="nd-monument">
-          <div className="nd-monument-num">
-            <span className="opacity-50 text-[0.55em] tracking-[0.2em] mr-3 align-middle">DAY</span>
-            {giorni}
-          </div>
+          <div className="nd-monument-num">{giorni}</div>
+          <div className="nd-monument-label">insieme</div>
           <div className="nd-monument-sub">insieme da {giorni} giorn{giorni === 1 ? "o" : "i"} · dal {formatDateIT(profiles.since)}</div>
         </div>
       )}
@@ -309,12 +328,12 @@ function NDStyles() {
       }
 
       /* HERO */
-      .nd-hero { padding: 6px 0 4px; }
+      .nd-hero { padding: 6px 0 4px; overflow: visible; }
       .nd-kicker { font-family: 'Caveat', cursive; color: var(--peach); font-size: 24px; line-height: 1; margin-bottom: 8px; letter-spacing: .01em; }
-      .nd-h1 { font-family: 'Fraunces', serif; font-style: italic; font-weight: 600; letter-spacing: -.025em; line-height: .96; font-size: clamp(48px, 11vw, 84px); }
-      .nd-display { font-family: 'Fraunces', serif; font-style: italic; font-weight: 600; letter-spacing: -.035em; line-height: .92; font-size: clamp(56px, 14vw, 124px); margin: 0 -2px; }
-      .nd-name { background: linear-gradient(180deg, var(--ink) 0%, #C9B9A6 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
-      .nd-name-b { background: linear-gradient(180deg, var(--peach) 0%, var(--peachDeep) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      .nd-h1 { font-family: 'Fraunces', serif; font-style: italic; font-weight: 600; letter-spacing: -.025em; line-height: 1.1; font-size: clamp(48px, 11vw, 84px); padding: .05em .15em; margin: 0 -.15em; overflow: visible; }
+      .nd-display { font-family: 'Fraunces', serif; font-style: italic; font-weight: 600; letter-spacing: -.035em; line-height: 1.1; font-size: clamp(56px, 14vw, 124px); padding: .05em .15em; margin: 0 -.15em; overflow: visible; }
+      .nd-name { background: linear-gradient(180deg, var(--ink) 0%, #C9B9A6 100%); -webkit-background-clip: text; background-clip: text; color: transparent; padding: .08em .05em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+      .nd-name-b { background: linear-gradient(180deg, var(--peach) 0%, var(--peachDeep) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; padding: .08em .05em; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
       .nd-amp { display: inline-flex; vertical-align: middle; margin: 0 .12em; }
       .nd-heart { color: var(--peach); animation: ndBeat 2.4s ease-in-out infinite; transform-origin: center; filter: drop-shadow(0 6px 18px rgba(255,152,112,.5)); }
       @keyframes ndBeat { 0%,100% { transform: scale(1);} 14% { transform: scale(1.24);} 28% { transform: scale(.96);} 42% { transform: scale(1.16);} 56% { transform: scale(1);} }
@@ -322,15 +341,20 @@ function NDStyles() {
       .nd-rule { height: 1px; background: linear-gradient(90deg, var(--line2), transparent); margin-top: 18px; }
 
       /* MONUMENT counter */
-      .nd-monument { margin-top: 32px; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+      .nd-monument { margin-top: 32px; display: flex; flex-direction: column; gap: 0; align-items: flex-start; overflow: visible; }
       .nd-monument-num {
         font-family: 'Fraunces', serif; font-style: italic; font-weight: 600;
-        font-size: clamp(72px, 18vw, 168px); line-height: .9; letter-spacing: -.04em;
+        font-size: clamp(72px, 18vw, 168px); line-height: 1; letter-spacing: -.04em;
         background: linear-gradient(180deg, var(--gold) 0%, #B0822E 80%);
         -webkit-background-clip: text; background-clip: text; color: transparent;
-        text-shadow: 0 8px 30px rgba(232,184,106,.18);
+        overflow: visible; padding-right: .15em; padding-bottom: 4px;
       }
-      .nd-monument-sub { font-size: 13px; letter-spacing: .04em; color: var(--ink3); }
+      .nd-monument-label {
+        font-family: 'Fraunces', serif; font-style: italic; font-weight: 600;
+        font-size: clamp(36px, 9vw, 72px); line-height: 1; letter-spacing: -.02em;
+        color: var(--ink); margin-top: -2px;
+      }
+      .nd-monument-sub { font-size: 13px; letter-spacing: .04em; color: var(--ink3); margin-top: 10px; }
 
       /* CARD */
       .nd-card {
