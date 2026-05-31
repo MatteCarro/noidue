@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -16,12 +16,39 @@ html,
 body {
   margin: 0;
   min-height: 100svh;
+  background: #14100E;
 }
 
 body {
   overflow-x: hidden;
+  overscroll-behavior-y: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  overscroll-behavior-y: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 #root {
   min-height: 100svh;
+}
+
+/* App feel: UI/bottoni non selezionabili (il testo dei contenuti resta tale) */
+button,
+.nd-tab,
+.nd-toplink,
+.nd-segment-btn,
+.nd-chip,
+.nd-cat-pill {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* In standalone, rispetta le safe-area dell'iPhone (notch / status bar) */
+@media (display-mode: standalone) {
+  body {
+    padding-top: env(safe-area-inset-top);
+  }
 }
