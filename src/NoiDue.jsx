@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { dbLoad, dbSave } from "./lib/supabase";
 import {
+  pushSupported, isStandalone, permissionState, enablePush, notifyDiary, getMe,
+} from "./lib/push";
+import {
   Heart, CalendarDays, UtensilsCrossed, FolderHeart, Users,
-  Plus, Trash2, ShoppingCart, Sparkles, Check, X, Bell,
-  MapPin, Loader2, PenLine, ChevronDown, CalendarClock,
+  Plus, Trash2, ShoppingCart, Sparkles, Check, X, Bell, BellRing, BellOff,
+  MapPin, Loader2, PenLine, ChevronDown, CalendarClock, Smartphone,
 } from "lucide-react";
 
 /* ============================================================
@@ -79,10 +82,11 @@ export default function NoiDue() {
   const [spesa, setSpesa] = useState([]);
   const [progetti, setProgetti] = useState([]);
   const [pianoPasti, setPianoPasti] = useState({ a: {}, b: {} });
+  const [notifSeen, setNotifSeen] = useState(0); // timestamp ultima visita Notifiche
 
   useEffect(() => {
     async function init() {
-      const [p, po, cal, pa, sp, pr, piano] = await Promise.all([
+      const [p, po, cal, pa, sp, pr, piano, seen] = await Promise.all([
         dbLoad("noidue:profiles", DEFAULT_PROFILES),
         dbLoad("noidue:posts", []),
         dbLoad("noidue:calendario", []),
@@ -90,6 +94,7 @@ export default function NoiDue() {
         dbLoad("noidue:spesa", []),
         dbLoad("noidue:progetti", []),
         dbLoad("noidue:pianoPasti", { a: {}, b: {} }),
+        dbLoad("noidue:notifSeen", 0),
       ]);
       setProfiles(p);
       setPosts(po);
@@ -98,6 +103,7 @@ export default function NoiDue() {
       setSpesa(sp);
       setProgetti(pr);
       setPianoPasti(piano);
+      setNotifSeen(seen || 0);
       initialized.current = true;
       setReady(true);
     }
@@ -111,6 +117,7 @@ export default function NoiDue() {
   useEffect(() => { if (initialized.current) dbSave("noidue:spesa", spesa); }, [spesa]);
   useEffect(() => { if (initialized.current) dbSave("noidue:progetti", progetti); }, [progetti]);
   useEffect(() => { if (initialized.current) dbSave("noidue:pianoPasti", pianoPasti); }, [pianoPasti]);
+  useEffect(() => { if (initialized.current) dbSave("noidue:notifSeen", notifSeen); }, [notifSeen]);
 
   const autori = [
     { key: "a", label: profiles.a.nome, tone: "peach" },
@@ -128,6 +135,40 @@ export default function NoiDue() {
     const d = Math.floor((Date.now() - new Date(profiles.since).getTime()) / 86400000);
     return d >= 0 ? d : null;
   }, [profiles.since]);
+
+  // Feed notifiche: ricordi del diario + promemoria dell'agenda
+  const notifiche = useMemo(() => {
+    const out = [];
+    for (const p of posts) {
+      out.push({
+        id: "post-" + p.id, tipo: "diario", autore: p.autore,
+        titolo: p.titolo?.trim() || "Nuovo pensiero",
+        sub: "Nuovo ricordo nel diario",
+        ts: new Date(p.data).getTime() || 0,
+      });
+    }
+    for (const e of calendario) {
+      if (!e.promemoria || !e.data) continue;
+      const ts = new Date(`${e.data}T${e.ora || "09:00"}`).getTime() || 0;
+      out.push({
+        id: "ev-" + e.id, tipo: "promemoria", autore: e.autore,
+        titolo: e.titolo,
+        sub: `Promemoria · ${formatDateIT(e.data)}${e.ora ? " · " + e.ora : ""}`,
+        ts,
+      });
+    }
+    return out.sort((a, b) => b.ts - a.ts);
+  }, [posts, calendario]);
+
+  const nonLette = useMemo(
+    () => notifiche.filter((n) => n.ts > (notifSeen || 0)).length,
+    [notifiche, notifSeen]
+  );
+
+  const apriNotifiche = () => {
+    setTab("notifiche");
+    setNotifSeen(Date.now());
+  };
 
   if (!ready) {
     return (
@@ -154,20 +195,27 @@ export default function NoiDue() {
               <div className="nd-mark"><Heart size={13} fill="currentColor" /></div>
               <span className="text-[13px] uppercase tracking-[0.32em] text-[var(--ink2)]">noidue</span>
             </div>
-            <nav className="hidden sm:flex items-center gap-1">
-              {nav.map(({ id, label }) => (
-                <button key={id} type="button" onClick={() => setTab(id)}
-                  className={`nd-toplink ${tab === id ? "is-active" : ""}`}>
-                  {label}
-                </button>
-              ))}
-            </nav>
-            {giorni != null && (
-              <div className="nd-pill-stat sm:hidden">
-                <span className="opacity-70">giorno</span>
-                <span className="font-semibold text-[var(--ink)]">{giorni}</span>
-              </div>
-            )}
+            <div className="flex items-center gap-2">
+              <nav className="hidden sm:flex items-center gap-1">
+                {nav.map(({ id, label }) => (
+                  <button key={id} type="button" onClick={() => setTab(id)}
+                    className={`nd-toplink ${tab === id ? "is-active" : ""}`}>
+                    {label}
+                  </button>
+                ))}
+              </nav>
+              {giorni != null && (
+                <div className="nd-pill-stat sm:hidden">
+                  <span className="opacity-70">giorno</span>
+                  <span className="font-semibold text-[var(--ink)]">{giorni}</span>
+                </div>
+              )}
+              <button type="button" onClick={apriNotifiche}
+                className={`nd-bell ${tab === "notifiche" ? "is-active" : ""}`} aria-label="Notifiche">
+                <Bell size={18} />
+                {nonLette > 0 && <span className="nd-bell-dot">{nonLette > 9 ? "9+" : nonLette}</span>}
+              </button>
+            </div>
           </div>
 
           {tab === "home" && (
@@ -188,6 +236,7 @@ export default function NoiDue() {
             {tab === "calendario" && <Calendario eventi={calendario} setEventi={setCalendario} autori={autori} />}
             {tab === "pasti" && <Pasti pasti={pasti} setPasti={setPasti} spesa={spesa} setSpesa={setSpesa} pianoPasti={pianoPasti} setPianoPasti={setPianoPasti} profiles={profiles} />}
             {tab === "progetti" && <Progetti progetti={progetti} setProgetti={setProgetti} autori={autori} />}
+            {tab === "notifiche" && <Notifiche notifiche={notifiche} autori={autori} profiles={profiles} />}
           </div>
         </main>
 
@@ -216,8 +265,8 @@ export default function NoiDue() {
   );
 }
 
-const tabKicker = (t) => ({ calendario: "le nostre date", pasti: "ai fornelli", progetti: "cose insieme" }[t] || "");
-const tabTitle = (t) => ({ calendario: "Agenda", pasti: "Cucina", progetti: "Progetti" }[t] || "");
+const tabKicker = (t) => ({ calendario: "le nostre date", pasti: "ai fornelli", progetti: "cose insieme", notifiche: "cosa è successo" }[t] || "");
+const tabTitle = (t) => ({ calendario: "Agenda", pasti: "Cucina", progetti: "Progetti", notifiche: "Notifiche" }[t] || "");
 
 /* ---------- HERO ---------- */
 function Hero({ profiles, giorni }) {
@@ -328,6 +377,22 @@ function NDStyles() {
         font-size: 12px; padding: 6px 12px; border-radius: 999px;
         background: rgba(255,255,255,.04); border: 1px solid var(--line2);
         color: var(--ink2);
+      }
+
+      /* BELL notifiche */
+      .nd-bell {
+        position: relative; width: 40px; height: 40px; border-radius: 12px;
+        display: grid; place-items: center; color: var(--ink2);
+        background: rgba(255,255,255,.04); border: 1px solid var(--line2);
+        transition: all .2s ease;
+      }
+      .nd-bell:hover { color: var(--ink); border-color: var(--peach); }
+      .nd-bell.is-active { color: #2a1810; background: linear-gradient(135deg, var(--peach), var(--peachDeep)); border-color: transparent; }
+      .nd-bell-dot {
+        position: absolute; top: -5px; right: -5px; min-width: 18px; height: 18px; padding: 0 4px;
+        border-radius: 999px; background: linear-gradient(135deg, #E05050, #B23A3A);
+        color: #fff; font-size: 10.5px; font-weight: 800; line-height: 18px; text-align: center;
+        border: 2px solid var(--bg); box-shadow: 0 4px 10px -3px rgba(224,80,80,.6);
       }
 
       /* HERO */
@@ -569,6 +634,7 @@ function Home({ profiles, setProfiles, posts, setPosts, autori, giorni }) {
   const addPost = () => {
     if (!draft.titolo.trim() && !draft.testo.trim()) return;
     setPosts((a) => [{ id: uid(), ...draft, data: new Date().toISOString() }, ...a]);
+    notifyDiary(draft.titolo, draft.autore); // avvisa l'altra persona
     setDraft({ titolo: "", testo: "", autore: "noi" });
   };
 
@@ -656,6 +722,133 @@ function Home({ profiles, setProfiles, posts, setPosts, autori, giorni }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/* ============================================================ NOTIFICHE */
+function tempoFa(ts) {
+  if (!ts) return "";
+  const diff = Date.now() - ts;
+  const fut = diff < 0;
+  const s = Math.abs(diff) / 1000;
+  const m = s / 60, h = m / 60, g = h / 24;
+  if (s < 60) return "ora";
+  if (m < 60) return `${fut ? "tra " : ""}${Math.round(m)} min${fut ? "" : " fa"}`;
+  if (h < 24) return `${fut ? "tra " : ""}${Math.round(h)} h${fut ? "" : " fa"}`;
+  if (g < 7) return `${fut ? "tra " : ""}${Math.round(g)} giorn${Math.round(g) === 1 ? "o" : "i"}${fut ? "" : " fa"}`;
+  return new Date(ts).toLocaleDateString("it-IT", { day: "numeric", month: "short" });
+}
+
+function Notifiche({ notifiche, autori, profiles }) {
+  const [perm, setPerm] = useState(() => permissionState());
+  const [me, setMeState] = useState(() => getMe() || "a");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const supportato = pushSupported();
+  const standalone = isStandalone();
+  const attive = perm === "granted" && !!getMe();
+
+  const nomeA = profiles?.a?.nome || "Lui";
+  const nomeB = profiles?.b?.nome || "Lei";
+
+  const attiva = async () => {
+    setBusy(true); setMsg("");
+    try {
+      await enablePush(me);
+      setPerm("granted");
+      setMsg("Notifiche attivate su questo iPhone ✓");
+    } catch (e) {
+      setMsg(e.message || "Impossibile attivare le notifiche.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div>
+      {/* Card attivazione push */}
+      <div className="nd-card glow p-5 mb-7">
+        <div className="flex items-center gap-2 mb-1">
+          <BellRing size={18} className="text-[var(--gold)]" />
+          <span className="nd-serif italic font-semibold text-[18px]">Notifiche sul telefono</span>
+        </div>
+
+        {attive ? (
+          <div className="flex items-center gap-2 mt-3 text-[14px] text-[var(--sage)]">
+            <Check size={16} /> Attive su questo iPhone come{" "}<b className="text-[var(--ink)] not-italic">{getMe() === "a" ? nomeA : nomeB}</b>
+          </div>
+        ) : !supportato ? (
+          <div className="mt-2">
+            <p className="nd-hand text-[18px] text-[var(--ink3)] mb-2">prima un piccolo passo</p>
+            <div className="flex items-start gap-2.5 text-[14px] text-[var(--ink2)] leading-relaxed">
+              <Smartphone size={18} className="text-[var(--peach)] shrink-0 mt-0.5" />
+              <span>Per ricevere le notifiche, apri NoiDue <b>dall'icona sulla Home</b> (non da Safari). Se non l'hai ancora aggiunta: tocca Condividi → «Aggiungi a Home».</span>
+            </div>
+          </div>
+        ) : perm === "denied" ? (
+          <p className="text-[14px] text-[var(--rose)] mt-3 leading-relaxed">
+            Le notifiche sono bloccate. Attivale da <b>Impostazioni iPhone → NoiDue → Notifiche</b>.
+          </p>
+        ) : (
+          <div className="mt-3">
+            <p className="text-[13.5px] text-[var(--ink2)] mb-3">Chi sta usando questo iPhone?</p>
+            <div className="nd-segment mb-4">
+              {[{ k: "a", l: nomeA }, { k: "b", l: nomeB }].map((p) => {
+                const active = me === p.k;
+                return (
+                  <button key={p.k} type="button" onClick={() => setMeState(p.k)}
+                    className={`nd-segment-btn ${active ? "is-active" : ""}`}
+                    style={active ? { background: "linear-gradient(135deg,#FF9870,#E5683E)" } : {}}>
+                    {p.l}
+                  </button>
+                );
+              })}
+            </div>
+            <Button onClick={attiva} disabled={busy} style={{ opacity: busy ? 0.7 : 1 }}>
+              {busy ? <Loader2 size={16} className="animate-spin" /> : <Bell size={16} />}
+              {busy ? "Attivo…" : "Attiva le notifiche"}
+            </Button>
+          </div>
+        )}
+        {msg && <p className="text-[13px] mt-3" style={{ color: msg.includes("✓") ? "var(--sage)" : "var(--rose)" }}>{msg}</p>}
+      </div>
+
+      {/* Feed */}
+      {notifiche.length === 0 ? (
+        <Empty text="Ancora niente da segnalare. Aggiungete un ricordo o un promemoria 💛" />
+      ) : (
+        <div className="flex flex-col gap-3">
+          {notifiche.map((n, i) => {
+            const promemoria = n.tipo === "promemoria";
+            return (
+              <div key={n.id} className="nd-card hover-lift nd-up p-4 flex gap-3 items-center"
+                style={{ animationDelay: `${Math.min(i, 6) * 0.05}s` }}>
+                <div className="grid place-items-center rounded-2xl shrink-0"
+                  style={{
+                    width: 44, height: 44,
+                    background: promemoria
+                      ? "linear-gradient(135deg, rgba(232,184,106,.2), rgba(176,130,46,.14))"
+                      : "linear-gradient(135deg, rgba(255,152,112,.2), rgba(229,104,62,.14))",
+                    border: "1px solid var(--line2)",
+                    color: promemoria ? "var(--gold)" : "var(--peach)",
+                  }}>
+                  {promemoria ? <Bell size={18} /> : <Heart size={18} fill="currentColor" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold text-[15px] truncate">{n.titolo}</h3>
+                    {n.autore && <AutoreChip autore={n.autore} autori={autori} />}
+                  </div>
+                  <p className="text-[12.5px] text-[var(--ink3)] mt-0.5">{n.sub}</p>
+                </div>
+                <span className="text-[11.5px] text-[var(--ink3)] shrink-0">{tempoFa(n.ts)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
