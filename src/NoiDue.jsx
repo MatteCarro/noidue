@@ -19,56 +19,40 @@ const uid = () =>
     ? crypto.randomUUID()
     : String(Date.now()) + Math.random().toString(16).slice(2);
 
-/* ---------- Mock ingredienti (sostituire con fetch('/api/ricetta')) ---------- */
-const RICETTARIO = {
-  "risotto alle verdure": [
-    { nome: "Riso Carnaroli", quantita: "320 g", categoria: "Pane e Pasta" },
-    { nome: "Zucchine", quantita: "2", categoria: "Frutta e Verdura" },
-    { nome: "Pomodorini", quantita: "200 g", categoria: "Frutta e Verdura" },
-    { nome: "Carote", quantita: "1", categoria: "Frutta e Verdura" },
-    { nome: "Cipolla", quantita: "1", categoria: "Frutta e Verdura" },
-    { nome: "Brodo vegetale", quantita: "1 L", categoria: "Dispensa" },
-    { nome: "Parmigiano", quantita: "60 g", categoria: "Latticini e Uova" },
-    { nome: "Olio EVO", quantita: "q.b.", categoria: "Dispensa" },
-  ],
-  "lasagne": [
-    { nome: "Sfoglie per lasagne", quantita: "250 g", categoria: "Pane e Pasta" },
-    { nome: "Carne macinata", quantita: "400 g", categoria: "Carne e Pesce" },
-    { nome: "Passata di pomodoro", quantita: "700 g", categoria: "Dispensa" },
-    { nome: "Besciamella", quantita: "500 ml", categoria: "Latticini e Uova" },
-    { nome: "Parmigiano", quantita: "100 g", categoria: "Latticini e Uova" },
-    { nome: "Cipolla", quantita: "1", categoria: "Frutta e Verdura" },
-  ],
-  "carbonara": [
-    { nome: "Spaghetti", quantita: "320 g", categoria: "Pane e Pasta" },
-    { nome: "Guanciale", quantita: "150 g", categoria: "Carne e Pesce" },
-    { nome: "Uova", quantita: "4", categoria: "Latticini e Uova" },
-    { nome: "Pecorino romano", quantita: "80 g", categoria: "Latticini e Uova" },
-    { nome: "Pepe nero", quantita: "q.b.", categoria: "Dispensa" },
-  ],
-  "pollo al curry": [
-    { nome: "Petto di pollo", quantita: "500 g", categoria: "Carne e Pesce" },
-    { nome: "Latte di cocco", quantita: "400 ml", categoria: "Dispensa" },
-    { nome: "Curry in polvere", quantita: "2 cucchiai", categoria: "Dispensa" },
-    { nome: "Cipolla", quantita: "1", categoria: "Frutta e Verdura" },
-    { nome: "Riso basmati", quantita: "300 g", categoria: "Pane e Pasta" },
-  ],
-};
+/* ---------- AI ingredienti via Gemini Flash (gratis) ---------- */
+const CATEGORIE_VALIDE = ["Frutta e Verdura", "Carne e Pesce", "Latticini e Uova", "Pane e Pasta", "Dispensa", "Altro"];
+
 async function generaIngredienti(piatto, porzioni) {
-  await new Promise((r) => setTimeout(r, 650));
-  const key = piatto.trim().toLowerCase();
-  const base = RICETTARIO[key];
-  if (base) return { piatto, porzioni, ingredienti: base };
-  return {
-    piatto, porzioni,
-    ingredienti: [
-      { nome: "Ingrediente principale", quantita: `${porzioni * 150} g`, categoria: "Carne e Pesce" },
-      { nome: "Verdura di stagione", quantita: `${porzioni * 100} g`, categoria: "Frutta e Verdura" },
-      { nome: "Pasta o riso", quantita: `${porzioni * 80} g`, categoria: "Pane e Pasta" },
-      { nome: "Olio EVO", quantita: "q.b.", categoria: "Dispensa" },
-      { nome: "Sale e spezie", quantita: "q.b.", categoria: "Dispensa" },
-    ],
-  };
+  const apiKey = import.meta.env.VITE_GEMINI_KEY;
+  const prompt = `Sei un assistente culinario italiano. Per il piatto "${piatto}" per ${porzioni} persone, elenca gli ingredienti necessari.
+Rispondi SOLO con un array JSON valido, senza markdown, senza spiegazioni. Formato:
+[{"nome":"...","quantita":"...","categoria":"..."}]
+Le categorie devono essere esattamente una di queste: "Frutta e Verdura", "Carne e Pesce", "Latticini e Uova", "Pane e Pasta", "Dispensa", "Altro".
+Adatta le quantità per ${porzioni} persone.`;
+
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent?key=${apiKey}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
+      }),
+    }
+  );
+
+  if (!res.ok) throw new Error("Errore API Gemini");
+  const json = await res.json();
+  const testo = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const pulito = testo.replace(/```json|```/g, "").trim();
+  const ingredienti = JSON.parse(pulito).map((i) => ({
+    nome: i.nome,
+    quantita: i.quantita,
+    categoria: CATEGORIE_VALIDE.includes(i.categoria) ? i.categoria : "Altro",
+  }));
+
+  return { piatto, porzioni, ingredienti };
 }
 
 /* ============================================================ */
