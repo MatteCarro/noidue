@@ -858,7 +858,10 @@ function Calendario({ eventi, setEventi, autori }) {
   const [d, setD] = useState({ titolo: "", data: "", ora: "", luogo: "", autore: "noi", promemoria: true });
   const add = () => {
     if (!d.titolo.trim() || !d.data) return;
-    setEventi((a) => [...a, { id: uid(), ...d }]);
+    // Timestamp UTC dell'evento calcolato sul telefono (che conosce la timezone locale).
+    // Lo usa la Edge Function per sapere esattamente quando far scattare il promemoria.
+    const at_ms = new Date(`${d.data}T${d.ora || "09:00"}`).getTime();
+    setEventi((a) => [...a, { id: uid(), ...d, at_ms }]);
     setD({ titolo: "", data: "", ora: "", luogo: "", autore: "noi", promemoria: true });
   };
   const oggi = new Date(); oggi.setHours(0, 0, 0, 0);

@@ -82,9 +82,27 @@ Deno.serve(async (req) => {
     let inviati = 0;
     const dead: string[] = [];
 
+    // Per gli eventi senza `at_ms` (vecchi, creati prima del fix timezone) calcoliamo
+    // l'orario interpretando data+ora come "Europe/Rome" anziché UTC del server.
+    const italyOffsetMin = (d: Date) => {
+      const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "Europe/Rome", timeZoneName: "longOffset" });
+      const tz = fmt.formatToParts(d).find((p) => p.type === "timeZoneName")?.value || "GMT+01:00";
+      const m = tz.match(/GMT([+-])(\d+):?(\d*)/);
+      if (!m) return 60;
+      return (m[1] === "+" ? 1 : -1) * (parseInt(m[2], 10) * 60 + parseInt(m[3] || "0", 10));
+    };
+    const eventTime = (e: any) => {
+      if (typeof e.at_ms === "number") return e.at_ms;
+      if (!e.data) return NaN;
+      // Interpreta "yyyy-MM-ddTHH:mm" come ora italiana, poi converte in UTC ms
+      const naiveUtc = new Date(`${e.data}T${e.ora || "09:00"}:00Z`).getTime();
+      if (isNaN(naiveUtc)) return NaN;
+      return naiveUtc - italyOffsetMin(new Date(naiveUtc)) * 60 * 1000;
+    };
+
     for (const e of cal) {
       if (!e.promemoria || !e.data || state.notified.includes(e.id)) continue;
-      const t = new Date(`${e.data}T${e.ora || "09:00"}`).getTime();
+      const t = eventTime(e);
       if (isNaN(t)) continue;
       // scattato nell'ultima ora (così non perde l'evento tra un giro e l'altro del cron)
       if (t <= now && now - t < 60 * 60 * 1000) {
