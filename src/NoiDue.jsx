@@ -42,7 +42,10 @@ Adatta le quantità per ${porzioni} persone.`;
     }
   );
 
-  if (!res.ok) throw new Error("Errore API Gemini");
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(`Gemini ${res.status}: ${errBody?.error?.message || res.statusText}`);
+  }
   const json = await res.json();
   const testo = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
   const pulito = testo.replace(/```json|```/g, "").trim();
