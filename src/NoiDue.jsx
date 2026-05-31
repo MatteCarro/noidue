@@ -752,7 +752,7 @@ function Pasti({ pasti, setPasti, spesa, setSpesa }) {
     if (!piatto.trim()) return;
     setLoading(true); setErrore(""); setAnteprima(null);
     try { setAnteprima(await generaIngredienti(piatto.trim(), porzioni)); }
-    catch { setErrore("Non sono riuscito a generare gli ingredienti. Riprova tra poco."); }
+    catch (e) { setErrore(`Errore: ${e.message}`); }
     finally { setLoading(false); }
   };
   const conferma = () => {
