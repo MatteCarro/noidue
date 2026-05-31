@@ -78,16 +78,18 @@ export default function NoiDue() {
   const [pasti, setPasti] = useState([]);
   const [spesa, setSpesa] = useState([]);
   const [progetti, setProgetti] = useState([]);
+  const [pianoPasti, setPianoPasti] = useState({ a: {}, b: {} });
 
   useEffect(() => {
     async function init() {
-      const [p, po, cal, pa, sp, pr] = await Promise.all([
+      const [p, po, cal, pa, sp, pr, piano] = await Promise.all([
         dbLoad("noidue:profiles", DEFAULT_PROFILES),
         dbLoad("noidue:posts", []),
         dbLoad("noidue:calendario", []),
         dbLoad("noidue:pasti", []),
         dbLoad("noidue:spesa", []),
         dbLoad("noidue:progetti", []),
+        dbLoad("noidue:pianoPasti", { a: {}, b: {} }),
       ]);
       setProfiles(p);
       setPosts(po);
@@ -95,6 +97,7 @@ export default function NoiDue() {
       setPasti(pa);
       setSpesa(sp);
       setProgetti(pr);
+      setPianoPasti(piano);
       initialized.current = true;
       setReady(true);
     }
@@ -107,6 +110,7 @@ export default function NoiDue() {
   useEffect(() => { if (initialized.current) dbSave("noidue:pasti", pasti); }, [pasti]);
   useEffect(() => { if (initialized.current) dbSave("noidue:spesa", spesa); }, [spesa]);
   useEffect(() => { if (initialized.current) dbSave("noidue:progetti", progetti); }, [progetti]);
+  useEffect(() => { if (initialized.current) dbSave("noidue:pianoPasti", pianoPasti); }, [pianoPasti]);
 
   const autori = [
     { key: "a", label: profiles.a.nome, tone: "peach" },
@@ -182,7 +186,7 @@ export default function NoiDue() {
           <div key={tab} className="nd-up">
             {tab === "home" && <Home profiles={profiles} setProfiles={setProfiles} posts={posts} setPosts={setPosts} autori={autori} giorni={giorni} />}
             {tab === "calendario" && <Calendario eventi={calendario} setEventi={setCalendario} autori={autori} />}
-            {tab === "pasti" && <Pasti pasti={pasti} setPasti={setPasti} spesa={spesa} setSpesa={setSpesa} />}
+            {tab === "pasti" && <Pasti pasti={pasti} setPasti={setPasti} spesa={spesa} setSpesa={setSpesa} pianoPasti={pianoPasti} setPianoPasti={setPianoPasti} profiles={profiles} />}
             {tab === "progetti" && <Progetti progetti={progetti} setProgetti={setProgetti} autori={autori} />}
           </div>
         </main>
@@ -746,7 +750,132 @@ function Calendario({ eventi, setEventi, autori }) {
 const CAT_ORDER = ["Frutta e Verdura", "Carne e Pesce", "Latticini e Uova", "Pane e Pasta", "Dispensa", "Altro"];
 const CAT_EMOJI = { "Frutta e Verdura": "🥦", "Carne e Pesce": "🥩", "Latticini e Uova": "🧀", "Pane e Pasta": "🍞", "Dispensa": "🫙", "Altro": "🛒" };
 
-function Pasti({ pasti, setPasti, spesa, setSpesa }) {
+const GIORNI = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"];
+const PASTI_SLOT = ["pranzo", "cena"];
+
+function PianoSettimanale({ pianoPasti, setPianoPasti, profiles }) {
+  const [persona, setPersona] = useState("a");
+  const [editing, setEditing] = useState(null); // { giorno, slot }
+  const [draft, setDraft] = useState("");
+
+  const piano = pianoPasti[persona] || {};
+
+  const apriEdit = (giorno, slot) => {
+    setEditing({ giorno, slot });
+    setDraft(piano[giorno]?.[slot] || "");
+  };
+  const salva = () => {
+    if (!editing) return;
+    setPianoPasti((prev) => ({
+      ...prev,
+      [persona]: {
+        ...prev[persona],
+        [editing.giorno]: {
+          ...(prev[persona]?.[editing.giorno] || {}),
+          [editing.slot]: draft.trim(),
+        },
+      },
+    }));
+    setEditing(null);
+    setDraft("");
+  };
+  const cancella = (giorno, slot) => {
+    setPianoPasti((prev) => {
+      const aggiornato = { ...(prev[persona]?.[giorno] || {}) };
+      delete aggiornato[slot];
+      return { ...prev, [persona]: { ...prev[persona], [giorno]: aggiornato } };
+    });
+  };
+
+  const nomeA = profiles?.a?.nome || "Lui";
+  const nomeB = profiles?.b?.nome || "Lei";
+
+  return (
+    <div className="mt-12">
+      <SubTitle kicker="la settimana" title="Piano pasti" />
+
+      {/* Tab Lui / Lei */}
+      <div className="nd-segment mb-6 w-fit">
+        {[{ key: "a", label: nomeA, tone: "gold" }, { key: "b", label: nomeB, tone: "peach" }].map((p) => {
+          const active = persona === p.key;
+          return (
+            <button key={p.key} type="button" onClick={() => setPersona(p.key)}
+              className={`nd-segment-btn ${active ? "is-active" : ""}`}
+              style={active ? {
+                background: p.tone === "gold"
+                  ? "linear-gradient(135deg,#E8B86A,#B0822E)"
+                  : "linear-gradient(135deg,#FF9870,#E5683E)",
+                boxShadow: "0 8px 18px -8px rgba(255,152,112,.45)"
+              } : {}}>
+              {p.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Griglia settimanale */}
+      <div className="flex flex-col gap-3">
+        {GIORNI.map((giorno) => (
+          <div key={giorno} className="nd-card overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-[var(--line)]">
+              <span className="nd-hand text-[20px] text-[var(--gold)]">{giorno}</span>
+            </div>
+            {PASTI_SLOT.map((slot, idx) => {
+              const valore = piano[giorno]?.[slot];
+              const isEditing = editing?.giorno === giorno && editing?.slot === slot;
+              return (
+                <div key={slot} className="flex items-center gap-3 px-4 py-3"
+                  style={{ borderTop: idx ? "1px solid var(--line)" : "none" }}>
+                  <span className="text-[11px] font-bold tracking-[0.18em] uppercase w-14 shrink-0"
+                    style={{ color: slot === "pranzo" ? "var(--gold)" : "var(--peach)" }}>
+                    {slot === "pranzo" ? "☀️ Pranzo" : "🌙 Cena"}
+                  </span>
+                  {isEditing ? (
+                    <div className="flex gap-2 flex-1">
+                      <input
+                        autoFocus
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") salva(); if (e.key === "Escape") setEditing(null); }}
+                        placeholder={`Es. Pasta al pomodoro`}
+                        className="nd-input flex-1 !min-h-[36px] !py-1.5 text-[14px]"
+                      />
+                      <button type="button" onClick={salva}
+                        className="nd-icon-btn text-[var(--sage)]"><Check size={16} /></button>
+                      <button type="button" onClick={() => setEditing(null)}
+                        className="nd-icon-btn"><X size={15} /></button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {valore ? (
+                        <>
+                          <span className="text-[14px] text-[var(--ink)] flex-1 truncate">{valore}</span>
+                          <IconButton label="Modifica" onClick={() => apriEdit(giorno, slot)}>
+                            <PenLine size={14} />
+                          </IconButton>
+                          <IconButton label="Cancella" onClick={() => cancella(giorno, slot)}>
+                            <Trash2 size={14} />
+                          </IconButton>
+                        </>
+                      ) : (
+                        <button type="button" onClick={() => apriEdit(giorno, slot)}
+                          className="text-[13px] text-[var(--ink3)] hover:text-[var(--peach)] flex items-center gap-1.5 transition-colors">
+                          <Plus size={13} /> Aggiungi
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Pasti({ pasti, setPasti, spesa, setSpesa, pianoPasti, setPianoPasti, profiles }) {
   const [piatto, setPiatto] = useState("");
   const [porzioni, setPorzioni] = useState(2);
   const [loading, setLoading] = useState(false);
@@ -892,6 +1021,8 @@ function Pasti({ pasti, setPasti, spesa, setSpesa }) {
           </div>
         </div>
       )}
+
+      <PianoSettimanale pianoPasti={pianoPasti} setPianoPasti={setPianoPasti} profiles={profiles} />
     </div>
   );
 }
