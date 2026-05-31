@@ -19,35 +19,37 @@ const uid = () =>
     ? crypto.randomUUID()
     : String(Date.now()) + Math.random().toString(16).slice(2);
 
-/* ---------- AI ingredienti via Gemini Flash (gratis) ---------- */
+/* ---------- AI ingredienti via Groq (gratis) ---------- */
 const CATEGORIE_VALIDE = ["Frutta e Verdura", "Carne e Pesce", "Latticini e Uova", "Pane e Pasta", "Dispensa", "Altro"];
 
 async function generaIngredienti(piatto, porzioni) {
-  const apiKey = import.meta.env.VITE_GEMINI_KEY;
+  const apiKey = import.meta.env.VITE_GROQ_KEY;
   const prompt = `Sei un assistente culinario italiano. Per il piatto "${piatto}" per ${porzioni} persone, elenca gli ingredienti necessari.
 Rispondi SOLO con un array JSON valido, senza markdown, senza spiegazioni. Formato:
 [{"nome":"...","quantita":"...","categoria":"..."}]
 Le categorie devono essere esattamente una di queste: "Frutta e Verdura", "Carne e Pesce", "Latticini e Uova", "Pane e Pasta", "Dispensa", "Altro".
 Adatta le quantità per ${porzioni} persone.`;
 
-  const res = await fetch(
-    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 512 },
-      }),
-    }
-  );
+  const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "llama-3.1-8b-instant",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.2,
+      max_tokens: 512,
+    }),
+  });
 
   if (!res.ok) {
     const errBody = await res.json().catch(() => ({}));
-    throw new Error(`Gemini ${res.status}: ${errBody?.error?.message || res.statusText}`);
+    throw new Error(`Groq ${res.status}: ${errBody?.error?.message || res.statusText}`);
   }
   const json = await res.json();
-  const testo = json.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  const testo = json.choices?.[0]?.message?.content || "";
   const pulito = testo.replace(/```json|```/g, "").trim();
   const ingredienti = JSON.parse(pulito).map((i) => ({
     nome: i.nome,
